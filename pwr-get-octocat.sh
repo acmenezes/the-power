@@ -4,7 +4,7 @@
 # GET /octocat
 
 # curl_custom_flags="--fail-with-body --no-progress-meter --write-out %output{tmp/a.json}%{json}%output{tmp/b.json}%{header_json}" 
-curl_custom_flags="--fail-with-body --no-progress-meter"
+# curl_custom_flags is set in .gh-api-examples.conf — do not override it here
 
 curl ${curl_custom_flags} \
      -H "X-GitHub-Api-Version: ${github_api_version}" \
