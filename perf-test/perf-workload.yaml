@@ -1,0 +1,29 @@
+# perf-workload.yaml — Default balanced workload for GHES performance testing.
+#
+# Each entry points to a real project script. Add or remove any script you like.
+# Weights control how often each script is picked (they don't need to sum to 100).
+# Run build-all.sh first to create the org, repo, issues, and branches needed.
+
+target_rpm: 60          # requests per minute (start low, scale up)
+duration: 300           # seconds
+workers: 5              # concurrent threads
+
+scripts:
+  # ── Read operations ────────────────────────────────────────────────────
+  - {script: list-repo.sh,                          weight: 5}
+  - {script: list-repository-issues.sh,              weight: 10}
+  - {script: list-pull-requests.sh,                  weight: 10}
+  - {script: list-org-repos.sh,                       weight: 5}
+  - {script: get-repository-content.sh,              weight: 10}
+  - {script: search-issues-and-pull-requests.sh,      weight: 5}
+
+  # ── Write operations ───────────────────────────────────────────────────
+  - {script: create-an-issue.sh,                     weight: 10}
+  - {script: create-issue-comment.sh,                 weight: 10}
+  - {script: perf-test/create-branch-and-pr.sh,       weight: 5}
+
+  # ── Git operations (clone/fetch/push over HTTPS) ──────────────────────
+  - {script: perf-test/git-fetch.sh,                   weight: 15}
+  - {script: perf-test/git-pull.sh,                    weight: 10}
+  - {script: perf-test/git-clone-repo.sh,              weight: 10}
+  - {script: perf-test/git-clone-and-push.sh,           weight: 5}
