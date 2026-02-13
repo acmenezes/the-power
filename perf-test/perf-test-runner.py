@@ -14,6 +14,7 @@ import sys
 import os
 import json
 import time
+import signal
 import random
 import argparse
 import threading
@@ -39,18 +40,27 @@ def run_script(script_path, timeout=60):
     """Run a shell script from the project root. Returns (exit_code, duration_ms, error)."""
     start = time.time()
     try:
-        result = subprocess.run(
+        # start_new_session=True puts the child in its own process group so we can kill it cleanly
+        proc = subprocess.Popen(
             ["bash", script_path],
             cwd=str(PROJECT_ROOT),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # Kill the entire process group (bash + any child curl/git processes)
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            return -1, (time.time() - start) * 1000, "timeout"
+
         duration_ms = (time.time() - start) * 1000
-        error = result.stderr.strip()[-200:] if result.returncode != 0 else None
-        return result.returncode, duration_ms, error
-    except subprocess.TimeoutExpired:
-        return -1, (time.time() - start) * 1000, "timeout"
+        # Keep last line of stderr (the actual error), capped at 200 chars
+        error = stderr.strip().splitlines()[-1][:200] if proc.returncode != 0 and stderr.strip() else None
+        return proc.returncode, duration_ms, error
     except Exception as e:
         return -1, (time.time() - start) * 1000, str(e)
 
@@ -94,7 +104,14 @@ class LoadDriver:
         """Pick a script, run it, record the result, pace, repeat."""
         while not self.stop_event.is_set():
             script = self._pick()
+
+            # Check stop_event right before running (avoid extra op after duration ends)
+            if self.stop_event.is_set():
+                break
+
+            op_start = time.time()
             exit_code, duration_ms, error = run_script(script["script"])
+            op_elapsed = time.time() - op_start
 
             entry = {
                 "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
@@ -106,8 +123,10 @@ class LoadDriver:
             with self.lock:
                 self.results.append(entry)
 
-            # Spread target RPM evenly across workers, with jitter
-            self._sleep(self.interval * self.workers * random.uniform(0.8, 1.2))
+            # Pace: target interval minus time already spent on the script
+            target_sleep = self.interval * self.workers * random.uniform(0.8, 1.2)
+            remaining = max(0, target_sleep - op_elapsed)
+            self._sleep(remaining)
 
     def _reporter(self, start_time):
         """Print live stats every 10 seconds."""
@@ -214,10 +233,10 @@ def main():
 
     workload = load_workload(args.workload)
 
-    # CLI flags override YAML values
-    target_rpm = args.target_rpm or workload.get("target_rpm", 60)
-    duration = args.duration or workload.get("duration", 300)
-    workers = args.workers or workload.get("workers", 10)
+    # CLI flags override YAML values (use 'is not None' so explicit 0 is respected)
+    target_rpm = args.target_rpm if args.target_rpm is not None else workload.get("target_rpm", 60)
+    duration = args.duration if args.duration is not None else workload.get("duration", 300)
+    workers = args.workers if args.workers is not None else workload.get("workers", 10)
 
     # Validate scripts exist on disk
     for s in workload["scripts"]:
