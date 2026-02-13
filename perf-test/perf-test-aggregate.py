@@ -63,7 +63,10 @@ def compute_stats(entries):
     """Compute summary stats for a list of log entries."""
     total = len(entries)
     errors = sum(1 for e in entries if is_error(e))
-    durations = sorted(e["duration_ms"] for e in entries if not is_error(e))
+    durations = sorted(
+        e["duration_ms"] for e in entries
+        if "duration_ms" in e and not is_error(e)
+    )
 
     # Time span for RPM
     timestamps = []
@@ -96,14 +99,16 @@ HEADERS = ["Total", "Errors", "Err %", "RPM", "Avg ms", "p50 ms", "p95 ms", "p99
 
 def print_table(title, rows_dict, label_header="Script"):
     """Print a formatted ASCII table to stderr."""
+    # Size the label column to fit the longest label (minimum 40 chars)
+    col_w = max(40, max((len(k) for k in rows_dict), default=40))
     print(f"\n  {title}", file=sys.stderr)
-    hdr = f"  {label_header:<40}"
+    hdr = f"  {label_header:<{col_w}}"
     for h in HEADERS:
         hdr += f" {h:>8}"
     print(hdr, file=sys.stderr)
-    print(f"  {'-'*40} " + " ".join("-" * 8 for _ in HEADERS), file=sys.stderr)
+    print(f"  {'-'*col_w} " + " ".join("-" * 8 for _ in HEADERS), file=sys.stderr)
     for label, stats in rows_dict.items():
-        row = f"  {label:<40}"
+        row = f"  {label:<{col_w}}"
         for field in FIELDS:
             val = stats[field]
             if field == "error_pct":
@@ -190,12 +195,14 @@ def main():
             w.writerow(["Script"] + HEADERS)
             for label, stats in label_stats.items():
                 w.writerow([label] + [stats[field] for field in FIELDS])
+            # Overall summary as the last row
+            w.writerow(["OVERALL"] + [overall[field] for field in FIELDS])
         print(f"\n  CSV → {args.csv_path}", file=sys.stderr)
 
     # Markdown
     if args.markdown:
         print("\n## Overall\n")
-        print_markdown("Metric", {"Summary": overall})
+        print_markdown("Overall", {"All scripts": overall})
         print("## By Script\n")
         print_markdown("Script", label_stats)
 
