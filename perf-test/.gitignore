@@ -1,3 +1,7 @@
 .venv/
 workdir/
 results/*.jsonl
+results/*.tgz
+token.txt
+credentials/ghes-admin
+credentials/ghes-admin.pub

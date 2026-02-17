@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
 perf-test-aggregate.py — Read one or more JSON-lines result files produced by
-perf-test-runner.py, compute summary statistics, and optionally write CSV or
-markdown output.
+perf-test-runner.py or parse-support-bundle.py, compute summary statistics,
+and optionally write CSV or markdown output.
 
 Usage:
     python3 perf-test/perf-test-aggregate.py perf-test/results/*.jsonl
     python3 perf-test/perf-test-aggregate.py perf-test/results/*.jsonl --csv perf-test/results/report.csv
     python3 perf-test/perf-test-aggregate.py perf-test/results/*.jsonl --markdown
+
+    # Compare client-side (perf-test) with server-side (support bundle):
+    python3 perf-test/perf-test-aggregate.py --compare perf-test/results/perf-*.jsonl --server perf-test/results/server-*.jsonl
 """
 
 import sys
@@ -135,20 +138,76 @@ def print_markdown(label_header, rows_dict):
     print()
 
 
+def print_compare(client_stats, server_stats):
+    """Print a side-by-side client vs server comparison table."""
+    COMPARE_FIELDS = ["total", "errors", "error_pct", "rpm", "avg_ms", "p50_ms", "p95_ms", "p99_ms"]
+    COMPARE_LABELS = ["Total", "Errors", "Err %", "RPM", "Avg ms", "p50 ms", "p95 ms", "p99 ms"]
+
+    print(f"\n{'='*70}", file=sys.stderr)
+    print(f"  CLIENT vs SERVER COMPARISON", file=sys.stderr)
+    print(f"{'='*70}", file=sys.stderr)
+    print(f"  {'Metric':<16} {'Client':>12} {'Server':>12} {'Delta':>12}", file=sys.stderr)
+    print(f"  {'-'*16} {'-'*12} {'-'*12} {'-'*12}", file=sys.stderr)
+
+    for field, label in zip(COMPARE_FIELDS, COMPARE_LABELS):
+        cv = client_stats[field]
+        sv = server_stats[field]
+
+        if field == "error_pct":
+            c_str = f"{cv:.1f}%"
+            s_str = f"{sv:.1f}%"
+            d_str = f"{sv - cv:+.1f}%"
+        elif isinstance(cv, float):
+            c_str = f"{cv:.1f}"
+            s_str = f"{sv:.1f}"
+            delta = sv - cv
+            if field in ("avg_ms", "p50_ms", "p95_ms", "p99_ms") and cv > 0:
+                # For latency: client > server means network overhead
+                d_str = f"{delta:+.1f} ms"
+            else:
+                d_str = f"{delta:+.1f}"
+        else:
+            c_str = str(cv)
+            s_str = str(sv)
+            d_str = str(sv - cv)
+
+        print(f"  {label:<16} {c_str:>12} {s_str:>12} {d_str:>12}", file=sys.stderr)
+
+    # Highlight the network overhead (client p50 - server p50)
+    net_overhead = client_stats["p50_ms"] - server_stats["p50_ms"]
+    if net_overhead > 0 and server_stats["p50_ms"] > 0:
+        print(f"\n  Network overhead (client p50 − server p50): ~{net_overhead:.0f} ms", file=sys.stderr)
+    print(f"{'='*70}\n", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Aggregate perf-test results.")
-    parser.add_argument("files", nargs="+", help=".jsonl result files")
+    parser.add_argument("files", nargs="*", help=".jsonl result files (client-side)")
     parser.add_argument("--csv", dest="csv_path", default=None, help="Write CSV report")
     parser.add_argument("--markdown", action="store_true", help="Print markdown table to stdout")
     parser.add_argument("--by-file", dest="by_file", action="store_true", help="Group by source file")
+    parser.add_argument("--compare", action="store_true", help="Compare client vs server stats")
+    parser.add_argument("--server", nargs="+", default=[], help="Server-side .jsonl files (from parse-support-bundle.py)")
     args = parser.parse_args()
 
-    rows = load_jsonl_files(args.files)
+    # If --compare mode, merge files lists but track which is which
+    if args.compare and args.server:
+        all_files = (args.files or []) + args.server
+        server_basenames = {os.path.basename(f) for f in args.server}
+    else:
+        all_files = args.files or []
+        server_basenames = set()
+
+    if not all_files:
+        parser.print_help()
+        sys.exit(1)
+
+    rows = load_jsonl_files(all_files)
     if not rows:
         print("  No data found.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\n  Loaded {len(rows)} entries from {len(args.files)} file(s).", file=sys.stderr)
+    print(f"\n  Loaded {len(rows)} entries from {len(all_files)} file(s).", file=sys.stderr)
 
     # Group entries
     all_entries = [e for e, _ in rows]
@@ -157,6 +216,13 @@ def main():
     for entry, source in rows:
         by_label[entry_label(entry)].append(entry)
         by_file[source].append(entry)
+
+    # Client vs server split (for --compare mode)
+    if args.compare and server_basenames:
+        client_entries = [e for e, src in rows if src not in server_basenames]
+        server_entries = [e for e, src in rows if src in server_basenames]
+        if client_entries and server_entries:
+            print_compare(compute_stats(client_entries), compute_stats(server_entries))
 
     # Overall
     overall = compute_stats(all_entries)
@@ -182,8 +248,8 @@ def main():
     label_stats = {k: compute_stats(v) for k, v in sorted(by_label.items())}
     print_table("By Script", label_stats)
 
-    # Per-file (optional)
-    if args.by_file:
+    # Per-file (optional, or automatic in --compare mode)
+    if args.by_file or (args.compare and server_basenames):
         file_stats = {k: compute_stats(v) for k, v in sorted(by_file.items())}
         print_table("By Source File", file_stats, label_header="File")
 
