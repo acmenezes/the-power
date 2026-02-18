@@ -1,0 +1,18 @@
+# kustomization.yaml — Apply all base resources at once:
+#   kubectl apply -k perf-test/k8s/manifests/
+#
+# To run only one phase, apply that Job individually:
+#   kubectl apply -f perf-test/k8s/manifests/job-api.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ghes-perf-test
+
+resources:
+  - namespace.yaml
+  - secret.yaml
+  - pvc.yaml
+  # Uncomment the phase(s) you want to run:
+  # - job-api.yaml
+  # - job-git.yaml
+  # - job-combined.yaml

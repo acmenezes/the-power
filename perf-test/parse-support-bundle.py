@@ -35,7 +35,6 @@ import argparse
 import tempfile
 import shutil
 from datetime import datetime, timezone
-from pathlib import Path
 
 
 # ─── Key-value log parser (used by unicorn.log and babeld.log) ───────────────
@@ -67,7 +66,8 @@ HAPROXY_PATTERN = re.compile(
     r'\s+\S+'                                           # backend/server
     r'\s+(?P<Tq>\d+)/(?P<Tw>\d+)/(?P<Tc>\d+)/(?P<Tr>\d+)/(?P<Tt>\d+)'  # timers
     r'\s+(?P<status>\d+)'                               # status code
-    r'.*?"(?P<method>\w+)\s+(?P<path>\S+)'              # HTTP method + path
+    # HAProxy logs: "METHOD full_url relative_path" — capture method + relative path
+    r'.*?"(?P<method>\w+)\s+\S+\s+(?P<path>[^\s"]+)'
 )
 
 HAPROXY_DATE_FMT = "%d/%b/%Y:%H:%M:%S"
@@ -119,61 +119,79 @@ def in_window(ts, start, end):
 # ─── Log file processors ────────────────────────────────────────────────────
 
 def process_unicorn(lines, start, end):
-    """Parse unicorn.log (Rails HTTP requests) → list of JSONL dicts."""
+    """Parse unicorn.log (Rails HTTP requests) → list of JSONL dicts.
+
+    GHES 3.19 unicorn.log uses OpenTelemetry-style key=value fields:
+        path_info, elapsed, request_method, status, now, controller
+    """
     entries = []
     for line in lines:
         kv = parse_kv_line(line)
-        if not kv.get("path") or not kv.get("duration"):
+        # GHES 3.19 uses path_info= and elapsed= (not path=/duration=)
+        path = kv.get("path_info") or kv.get("path")
+        elapsed = kv.get("elapsed") or kv.get("duration")
+        if not path or not elapsed:
             continue
 
         ts = parse_timestamp(kv.get("now"))
         if not in_window(ts, start, end):
             continue
 
-        status = int(kv.get("status", 0))
-        duration_s = float(kv.get("duration", 0))
+        status = int(kv.get("status") or kv.get("http.status_code") or 0)
+        duration_s = float(elapsed)
+        method = kv.get("request_method") or kv.get("method") or "?"
         is_err = status >= 400
 
         entries.append({
             "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if ts else None,
-            "script": f"{kv.get('method', '?')} {kv['path']}",
+            "script": f"{method.upper()} {path}",
             "duration_ms": round(duration_s * 1000, 2),
             "exit_code": 0 if not is_err else status,
             "error": f"HTTP {status}" if is_err else None,
-            # Extra server-side fields (ignored by aggregator, useful for deep dives)
-            "db_ms": round(float(kv.get("db", 0)) * 1000, 2),
-            "view_ms": round(float(kv.get("view", 0)) * 1000, 2),
             "controller": kv.get("controller"),
         })
     return entries
 
 
 def process_babeld(lines, start, end):
-    """Parse babeld.log (Git transport) → list of JSONL dicts."""
+    """Parse babeld.log (Git transport) → list of JSONL dicts.
+
+    GHES 3.19 babeld.log uses:
+        ts=  (not now=) for timestamps
+        cmd= (not program=) for the Git command
+        log_level=ERROR for failures (e.g. auth denied)
+    """
     entries = []
     for line in lines:
         kv = parse_kv_line(line)
-        program = kv.get("program") or kv.get("msg")
-        if not program:
+
+        # cmd= is the Git command (git-upload-pack, git-receive-pack, etc.)
+        # Skip lines without cmd — they are stats/heartbeat messages
+        cmd = kv.get("cmd") or kv.get("program")
+        if not cmd:
             continue
 
-        ts = parse_timestamp(kv.get("now"))
+        # GHES 3.19 uses ts=, older versions may use now=
+        ts = parse_timestamp(kv.get("ts") or kv.get("now"))
         if not in_window(ts, start, end):
             continue
 
-        # duration can be in seconds (duration) or milliseconds (duration_ms)
+        # duration can be in milliseconds (duration_ms) or seconds (duration)
         dur_ms = float(kv.get("duration_ms", 0))
         if not dur_ms and kv.get("duration"):
             dur_ms = float(kv["duration"]) * 1000
 
-        repo = kv.get("repo_name", kv.get("repo", "unknown"))
+        repo = kv.get("repo_name") or kv.get("repo") or "unknown"
+        log_level = kv.get("log_level", "INFO")
+        is_err = log_level == "ERROR"
+        msg = kv.get("msg", "") if is_err else None
 
         entries.append({
             "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if ts else None,
-            "script": f"git {program} ({repo})",
+            "script": f"git {cmd} ({repo})",
             "duration_ms": round(dur_ms, 2),
-            "exit_code": 0,
-            "error": None,
+            "exit_code": 1 if is_err else 0,
+            "error": msg,
         })
     return entries
 
@@ -220,17 +238,21 @@ def read_log_file(path):
             return f.readlines()
 
 
+LOG_ROTATION_SUFFIX = re.compile(r'(\.\d+)?(\.gz)?$')
+
+
 def find_log_files(root_dir):
-    """Walk the extracted bundle and find known log files."""
+    """Walk the extracted bundle and find known log files.
+
+    Matches base.log as well as rotated variants like base.log.1,
+    base.log.1.gz, base.log.10.gz, etc.
+    """
     found = {}
     for dirpath, _, filenames in os.walk(root_dir):
         for fname in filenames:
-            base = fname.replace(".gz", "").replace(".1", "").replace(".2", "")
+            base = LOG_ROTATION_SUFFIX.sub("", fname)
             if base in LOG_PROCESSORS:
-                key = base
-                if key not in found:
-                    found[key] = []
-                found[key].append(os.path.join(dirpath, fname))
+                found.setdefault(base, []).append(os.path.join(dirpath, fname))
     return found
 
 
@@ -259,7 +281,11 @@ def main():
         tmp_dir = tempfile.mkdtemp(prefix="ghes-bundle-")
         print(f"  Extracting {bundle_path} → {tmp_dir}...", file=sys.stderr)
         with tarfile.open(bundle_path, "r:gz") as tar:
-            tar.extractall(tmp_dir)
+            # Use data filter when available (Python 3.12+) to prevent path traversal
+            if hasattr(tarfile, "data_filter"):
+                tar.extractall(tmp_dir, filter="data")
+            else:
+                tar.extractall(tmp_dir)
         root_dir = tmp_dir
     else:
         print(f"  ERROR: {bundle_path} is not a .tgz file or directory.", file=sys.stderr)

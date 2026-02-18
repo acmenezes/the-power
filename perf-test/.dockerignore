@@ -1,0 +1,8 @@
+# Exclude files not needed in the container image
+results/
+workdir/
+credentials/
+k8s/manifests/
+.venv/
+__pycache__/
+*.md

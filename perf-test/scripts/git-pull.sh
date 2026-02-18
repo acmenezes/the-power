@@ -1,12 +1,11 @@
 #!/bin/bash
-# git-fetch.sh — Clone the repo then fetch (simulates a developer pulling latest).
-# The fetch is the measured operation; most real-world fetches return "already up to date".
+# git-pull.sh — Clone the repo then pull (simulates a developer syncing their checkout).
 # Concurrency-safe (unique dir per call).
 
 . ./.gh-api-examples.conf
 
 # Unique work directory
-workdir="perf-test/workdir/fetch-$(date +%s)-$$-${RANDOM}"
+workdir="workdir/pull-$(date +%s)-$$-${RANDOM}"
 mkdir -p "$workdir"
 
 # Strip "api." prefix for clone URL
@@ -22,11 +21,11 @@ esac
 
 GIT="git -c http.sslVerify=false"
 
-# Clone first (setup), then fetch (the actual operation we care about)
+# Clone first (setup), then pull (the actual operation)
 $GIT clone --quiet "$clone_url" "$workdir/repo" 2>&1 || { rm -rf "$workdir"; exit 1; }
 
 cd "$workdir/repo"
-$GIT fetch --quiet origin 2>&1
+$GIT pull --quiet origin ${base_branch} 2>&1
 
 exit_code=$?
 

@@ -1,0 +1,26 @@
+# pvc.yaml — Shared persistent volume for test results.
+#
+# All Pods write their JSONL results here. After the Jobs complete,
+# copy results out with:
+#   kubectl cp ghes-perf-test/<any-completed-pod>:/results ./results
+#
+# Or mount the same PVC in a helper Pod:
+#   kubectl run results-reader -n ghes-perf-test --rm -it \
+#     --image=busybox --overrides='{"spec":{"containers":[{"name":"r",
+#     "image":"busybox","volumeMounts":[{"name":"results","mountPath":"/results"}],
+#     "command":["sh"]}],"volumes":[{"name":"results",
+#     "persistentVolumeClaim":{"claimName":"perf-results"}}]}}'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: perf-results
+  namespace: ghes-perf-test
+  labels:
+    app.kubernetes.io/name: ghes-perf-test
+spec:
+  accessModes:
+    - ReadWriteMany          # Multiple Pods write simultaneously
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: ""     # Uncomment and set if your cluster needs a specific SC

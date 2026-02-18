@@ -10,20 +10,20 @@ workers: 5              # concurrent threads
 
 scripts:
   # ── Read operations ────────────────────────────────────────────────────
-  - {script: list-repo.sh,                          weight: 5}
-  - {script: list-repository-issues.sh,              weight: 10}
-  - {script: list-pull-requests.sh,                  weight: 10}
-  - {script: list-org-repos.sh,                       weight: 5}
-  - {script: get-repository-content.sh,              weight: 10}
-  - {script: search-issues-and-pull-requests.sh,      weight: 5}
+  - {script: scripts/list-repo.sh,                          weight: 5}
+  - {script: scripts/list-repository-issues.sh,              weight: 10}
+  - {script: scripts/list-pull-requests.sh,                  weight: 10}
+  - {script: scripts/list-org-repos.sh,                       weight: 5}
+  - {script: scripts/get-repository-content.sh,              weight: 10}
+  - {script: scripts/search-issues-and-pull-requests.sh,      weight: 5}
 
   # ── Write operations ───────────────────────────────────────────────────
-  - {script: create-an-issue.sh,                     weight: 10}
-  - {script: create-issue-comment.sh,                 weight: 10}
-  - {script: perf-test/create-branch-and-pr.sh,       weight: 5}
+  - {script: scripts/create-an-issue.sh,                     weight: 10}
+  - {script: scripts/create-issue-comment.sh,                 weight: 10}
+  - {script: scripts/create-branch-and-pr.sh,                 weight: 5}
 
   # ── Git operations (clone/fetch/push over HTTPS) ──────────────────────
-  - {script: perf-test/git-fetch.sh,                   weight: 15}
-  - {script: perf-test/git-pull.sh,                    weight: 10}
-  - {script: perf-test/git-clone-repo.sh,              weight: 10}
-  - {script: perf-test/git-clone-and-push.sh,           weight: 5}
+  - {script: scripts/git-fetch.sh,                             weight: 15}
+  - {script: scripts/git-pull.sh,                              weight: 10}
+  - {script: scripts/git-clone-repo.sh,                        weight: 10}
+  - {script: scripts/git-clone-and-push.sh,                     weight: 5}

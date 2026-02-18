@@ -1,0 +1,78 @@
+# job-git.yaml — Phase 2: Git-only stress test.
+#
+# Runs 5 parallel Pods, each driving 10 workers at 100 RPM (= 500 RPM aggregate).
+# Git operations are heavier than API calls — needs more CPU and memory per worker.
+#
+# Usage:
+#   kubectl apply -f perf-test/k8s/manifests/job-git.yaml
+#   kubectl -n ghes-perf-test logs -f job/ghes-perf-git
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ghes-perf-git
+  namespace: ghes-perf-test
+  labels:
+    app.kubernetes.io/name: ghes-perf-test
+    ghes-perf/phase: git
+spec:
+  parallelism: 5
+  completions: 5
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ghes-perf-test
+        ghes-perf/phase: git
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: runner
+          image: quay.io/acmenezes/ghes-perf-runner:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - perf-test-runner.py
+            - --workload=perf-workload-git.yaml
+            - --target-rpm=100
+            - --workers=10
+            - --duration=300
+            - --output=/results/perf-git-$(HOSTNAME).jsonl
+          env:
+            - name: GHES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ghes-credentials
+                  key: host
+            - name: GHES_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ghes-credentials
+                  key: token
+            - name: GHES_ORG
+              value: "load-test-org"
+            - name: GHES_REPO
+              value: "loadtest-repo"
+          resources:
+            requests:
+              cpu: "2"
+              memory: "768Mi"
+            limits:
+              memory: "1536Mi"
+          volumeMounts:
+            - name: results
+              mountPath: /results
+            - name: workdir
+              mountPath: /app/workdir
+            - name: tmp
+              mountPath: /app/tmp
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: perf-results
+        - name: workdir
+          emptyDir:
+            sizeLimit: "2Gi"     # Git clones need more disk
+        - name: tmp
+          emptyDir:
+            sizeLimit: "256Mi"

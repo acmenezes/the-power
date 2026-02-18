@@ -8,14 +8,14 @@ workers: 5
 
 scripts:
   # ── Read operations ────────────────────────────────────────────────────
-  - {script: list-repo.sh,                          weight: 5}
-  - {script: list-repository-issues.sh,              weight: 10}
-  - {script: list-pull-requests.sh,                  weight: 10}
-  - {script: list-org-repos.sh,                       weight: 5}
-  - {script: get-repository-content.sh,              weight: 10}
-  - {script: search-issues-and-pull-requests.sh,      weight: 5}
+  - {script: scripts/list-repo.sh,                          weight: 5}
+  - {script: scripts/list-repository-issues.sh,              weight: 10}
+  - {script: scripts/list-pull-requests.sh,                  weight: 10}
+  - {script: scripts/list-org-repos.sh,                       weight: 5}
+  - {script: scripts/get-repository-content.sh,              weight: 10}
+  - {script: scripts/search-issues-and-pull-requests.sh,      weight: 5}
 
   # ── Write operations ───────────────────────────────────────────────────
-  - {script: create-an-issue.sh,                     weight: 10}
-  - {script: create-issue-comment.sh,                 weight: 10}
-  - {script: perf-test/create-branch-and-pr.sh,       weight: 5}
+  - {script: scripts/create-an-issue.sh,                     weight: 10}
+  - {script: scripts/create-issue-comment.sh,                 weight: 10}
+  - {script: scripts/create-branch-and-pr.sh,                 weight: 5}

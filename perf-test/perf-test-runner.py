@@ -26,8 +26,8 @@ from pathlib import Path
 
 import yaml
 
-# Project root: one level up from perf-test/
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Project root: perf-test/ itself (self-contained)
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 def load_workload(filepath):

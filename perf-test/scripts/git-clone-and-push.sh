@@ -6,7 +6,7 @@
 
 # Unique identifiers for this invocation
 unique_id="$(date +%s)-$$-${RANDOM}"
-workdir="perf-test/workdir/push-${unique_id}"
+workdir="workdir/push-${unique_id}"
 branch="perf-push-${unique_id}"
 mkdir -p "$workdir"
 

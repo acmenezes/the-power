@@ -1,0 +1,78 @@
+# job-combined.yaml — Phase 3: Combined API + Git workload.
+#
+# Runs 5 parallel Pods, each driving 10 workers at 300 RPM (= 1,500 RPM aggregate).
+# Uses the full workload file (all 13 scripts: 9 API + 4 Git).
+#
+# Usage:
+#   kubectl apply -f perf-test/k8s/manifests/job-combined.yaml
+#   kubectl -n ghes-perf-test logs -f job/ghes-perf-combined
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ghes-perf-combined
+  namespace: ghes-perf-test
+  labels:
+    app.kubernetes.io/name: ghes-perf-test
+    ghes-perf/phase: combined
+spec:
+  parallelism: 5
+  completions: 5
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ghes-perf-test
+        ghes-perf/phase: combined
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: runner
+          image: quay.io/acmenezes/ghes-perf-runner:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - perf-test-runner.py
+            - --workload=perf-workload.yaml
+            - --target-rpm=300
+            - --workers=10
+            - --duration=600
+            - --output=/results/perf-combined-$(HOSTNAME).jsonl
+          env:
+            - name: GHES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ghes-credentials
+                  key: host
+            - name: GHES_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ghes-credentials
+                  key: token
+            - name: GHES_ORG
+              value: "load-test-org"
+            - name: GHES_REPO
+              value: "loadtest-repo"
+          resources:
+            requests:
+              cpu: "1500m"
+              memory: "512Mi"
+            limits:
+              memory: "1Gi"
+          volumeMounts:
+            - name: results
+              mountPath: /results
+            - name: workdir
+              mountPath: /app/workdir
+            - name: tmp
+              mountPath: /app/tmp
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: perf-results
+        - name: workdir
+          emptyDir:
+            sizeLimit: "2Gi"
+        - name: tmp
+          emptyDir:
+            sizeLimit: "256Mi"

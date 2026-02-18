@@ -7,7 +7,7 @@ duration: 300
 workers: 5
 
 scripts:
-  - {script: perf-test/git-fetch.sh,                 weight: 15}
-  - {script: perf-test/git-pull.sh,                  weight: 10}
-  - {script: perf-test/git-clone-repo.sh,            weight: 10}
-  - {script: perf-test/git-clone-and-push.sh,         weight: 5}
+  - {script: scripts/git-fetch.sh,                   weight: 15}
+  - {script: scripts/git-pull.sh,                    weight: 10}
+  - {script: scripts/git-clone-repo.sh,              weight: 10}
+  - {script: scripts/git-clone-and-push.sh,           weight: 5}

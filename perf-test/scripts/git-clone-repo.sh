@@ -5,7 +5,7 @@
 . ./.gh-api-examples.conf
 
 # Unique work directory to avoid collisions across concurrent workers
-workdir="perf-test/workdir/clone-$(date +%s)-$$-${RANDOM}"
+workdir="workdir/clone-$(date +%s)-$$-${RANDOM}"
 mkdir -p "$workdir"
 
 # Strip "api." prefix for clone URL (needed for github.com; no-op for GHES IPs)
